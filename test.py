@@ -93,7 +93,7 @@ html_code = """
           let cc = [255*Math.random(), 255*Math.random(), 255*Math.random()];
           dots.push({x:px, y:py, c:cc, t:0});
         }
-        showMsg("✨ 뽕맛 폭발! 🎶");
+        showMsg("펑!!!!!!!!!!!!!!!!!11");
         userStartAudio();
         // 사운드
         if (loaded) {
