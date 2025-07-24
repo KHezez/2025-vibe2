@@ -1,16 +1,14 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.title("⚡ 반속 가위바위보: '페이스러시' (by monday X fury)")
+st.title("⚡ 반속 가위바위보: 페이스러시 (v2 by monday X fury)")
 
 st.markdown("""
-**[조작법]**  
-- 1 = ✌️ (가위), 2 = ✊ (바위), 3 = ✋ (보)  
-- 중앙에 "가위! 바위! 보!" 뜨는 동안 <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> 아무거나 누르세요  
-- CPU는 랜덤하게 내고,  
-- 이기면 cpu 손이 아래로 떨어지고,  
-- 새로운 cpu가 오른쪽에서 등장합니다  
-- 지거나 시간초과면 ❤️이 1개 깎임 (0되면 게임오버)
+- **1 = ✌️(가위), 2 = ✊(바위), 3 = ✋(보)**  
+- "가위! 바위! 보!" 진행 중 언제든 1/2/3 눌러 손 바꿀 수 있음  
+- CPU는 "보!" 타이밍에 랜덤하게 손 결정, 그 전까지 ✊  
+- 이기면 점수+1, CPU 손 떨어지고 새 CPU는 오른쪽에서 슬라이드 인  
+- 지거나 시간초과: ❤️ 감소, 0되면 게임오버 + 점수 표시!
 """)
 
 html_code = """
@@ -39,22 +37,26 @@ html_code = """
     <script>
       // --------- 게임 변수
       let playerHand = 1; // 1=가위 2=바위 3=보
-      let cpuHand = 1;
+      let cpuHand = 2;
       let playerHearts = 3;
-      let gameState = "wait"; // wait, show, input, resolve, cpuDrop, cpuSlide, gameover
+      let gameState = "wait"; // wait, show, judge, resolve, cpuDrop, cpuSlide, gameover
       let msg = "", handNames = ["", "✌️", "✊", "✋"];
       let cpuDropY = 0, cpuSlideX = 0;
       let timer = 0, phase = 0;
-      let inputLock = false, lastInput = 0;
-      let cpuQueue = [2,3,1,2,3]; // 뒤에 무한 대기
+      let lastInput = 1;
+      let inputLock = false;
+      let showPhase = 0;
+      let score = 0, bestScore = 0;
       let cpuAlive = true;
+      let cpuHandDraw = 2; // 표시용 (보! 전까지 항상 ✊)
+      let newCpuHand = 2; // 판정 후 슬라이드인용
 
-      // --------- 시작
       function setup() {
         let c = createCanvas(window.innerWidth, 390);
         c.parent('canvas-container');
         frameRate(60);
         document.getElementById("msg").innerHTML = "시작하기: 아무 키(1/2/3) 입력!";
+        playerHand = 1; cpuHand = 2;
       }
 
       function draw() {
@@ -67,6 +69,11 @@ html_code = """
         fill(255); textAlign(LEFT, TOP);
         text(heartStr, 30, 14);
 
+        // 점수 (왼쪽 아래)
+        textSize(20); fill(220);
+        textAlign(LEFT, BOTTOM);
+        text("점수: " + score, 32, height-14);
+
         // 플레이어 손(왼쪽)
         textSize(80); textAlign(CENTER, CENTER);
         fill(250,250,255);
@@ -76,14 +83,14 @@ html_code = """
         let cpuY = height/2+20 + cpuDropY;
         let cpuX = width-120 - cpuSlideX;
         fill(cpuAlive?255:180, cpuAlive?255:180, cpuAlive?255:220);
-        text(handNames[cpuHand], cpuX, cpuY);
+        text(handNames[cpuHandDraw], cpuX, cpuY);
 
         // 중앙 구분선
         stroke(150,155,190,70);
         strokeWeight(2.1);
         line(width/2, 35, width/2, height-35);
 
-        // 입력/상태 메시지
+        // 메시지
         document.getElementById("msg").innerHTML = msg;
 
         // 상태머신
@@ -91,67 +98,68 @@ html_code = """
           // 대기: 아무 키 누르면 시작
         } else if (gameState==="show") {
           // "가위! 바위! 보!" 애니메이션
-          phase = int((millis()-timer)/300);
-          if (phase==0) { msg="가위!"; }
-          else if (phase==1) { msg="바위!"; }
-          else if (phase==2) { msg="보!"; }
+          let elapsed = millis() - timer;
+          showPhase = int(elapsed / 300);
+          if (showPhase==0) { msg="가위!"; cpuHandDraw=2; }
+          else if (showPhase==1) { msg="바위!"; cpuHandDraw=2; }
+          else if (showPhase==2) { msg="보!"; cpuHandDraw=2; }
           else {
-            gameState = "input"; msg="손을 내세요! (1/2/3)";
+            // "보!" 순간 cpu 손 결정!
+            cpuHand = [1,2,3][int(random(3))];
+            cpuHandDraw = cpuHand;
+            msg="결과!";
+            gameState = "judge";
             timer = millis();
-            inputLock = false;
-            lastInput = 0;
           }
-        } else if (gameState==="input") {
-          // 입력 타이밍(0.9초)
-          if (!inputLock && millis()-timer>900) {
-            // 입력 못함 = 패배
-            inputLock = true;
-            resolve(-1);
+        } else if (gameState==="judge") {
+          // 입력 마감 (0.1초 딜레이 후 판정)
+          if (!inputLock && millis()-timer>100) {
+            inputLock=true;
+            resolve(playerHand);
           }
         } else if (gameState==="resolve") {
           // 판정 애니
           // cpu 패배시 손 아래로 떨어짐
           if (!cpuAlive) {
-            cpuDropY += 16;
-            if (cpuDropY > 160) {
+            cpuDropY += 18;
+            if (cpuDropY > 150) {
               cpuDropY = 0;
               gameState = "cpuSlide";
               cpuAlive = true;
-              cpuHand = cpuQueue.shift();
-              cpuQueue.push([1,2,3][int(random(3))]);
-              cpuSlideX = width*0.6;
+              // 새 cpu 오른쪽에서 등장
+              cpuSlideX = width*0.65;
+              newCpuHand = [1,2,3][int(random(3))];
+              cpuHand = newCpuHand; cpuHandDraw = newCpuHand;
             }
           }
         } else if (gameState==="cpuSlide") {
-          // 새로운 cpu 등장, 오른쪽에서 왼쪽으로 슬라이드
-          cpuSlideX -= 24;
+          // cpu가 오른쪽 바깥에서 슬라이드 인
+          cpuSlideX -= 26;
           if (cpuSlideX<=0) {
             cpuSlideX = 0;
             gameState = "show";
             timer = millis();
-            phase = 0;
+            showPhase = 0;
             msg = "";
+            cpuHandDraw = 2; // "가위! 바위! 보!"엔 주먹
           }
         } else if (gameState==="gameover") {
-          // 게임오버: 메시지
-          document.getElementById("over").innerHTML = "GAME OVER<br>다시 시작하려면 새로고침!";
+          // 게임오버: 메시지+점수
+          document.getElementById("over").innerHTML = "GAME OVER<br>점수: "+score+"<br><br>새로고침으로 재도전!";
           noLoop();
         }
       }
 
-      // --------- 키보드 입력
       function keyPressed() {
         if (inputLock) return;
         if (gameState==="wait") {
+          score=0; playerHearts=3;
           startRound();
           return false;
         }
-        if (gameState==="input") {
+        if (gameState==="show") {
           if (key=="1"||key=="2"||key=="3") {
-            inputLock = true;
-            lastInput = int(key);
-            resolve(lastInput);
-            return false;
+            playerHand = int(key); // 실시간 교체!
           }
         }
       }
@@ -162,34 +170,36 @@ html_code = """
         cpuAlive=true;
         cpuDropY=0;
         cpuSlideX=0;
-        cpuHand = [1,2,3][int(random(3))];
+        cpuHand = 2; // 바위로 대기
+        cpuHandDraw = 2;
         playerHand = 1;
         gameState = "show";
         timer = millis();
-        phase = 0;
+        showPhase = 0;
         document.getElementById("over").innerHTML = "";
+        inputLock = false;
       }
 
       function resolve(input) {
-        // -1이면 시간초과/미입력
-        playerHand = input>0?input:1; // 입력없으면 기본 1(가위)
-        let win = judge(playerHand, cpuHand); // 1:승, 0:무, -1:패
+        // 판정
+        let win = judge(input, cpuHand); // 1:승, 0:무, -1:패
         if (win==1) {
           msg = "승리!";
+          score += 1;
           cpuAlive=false;
           gameState="resolve";
-        } else if (win==-1||input==-1) {
+        } else if (win==-1) {
           msg = "패배!";
           playerHearts--;
           if (playerHearts<=0) {
             gameState = "gameover";
           } else {
-            setTimeout(()=>{ startRound(); }, 650);
+            setTimeout(()=>{ startRound(); }, 700);
             gameState = "wait";
           }
         } else {
           msg = "무승부!";
-          setTimeout(()=>{ startRound(); }, 650);
+          setTimeout(()=>{ startRound(); }, 700);
           gameState = "wait";
         }
         inputLock = true;
