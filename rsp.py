@@ -1,7 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.title("⚡ 패링 가위바위보")
+st.title("⚡ 패링 가위바위보 (소리키세요)")
 
 st.markdown("""
 - 1 = ✌️ (가위), 2 = ✊ (바위), 3 = ✋ (보)  (키보드 눌러서 시작)
