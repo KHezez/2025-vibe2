@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.title("🌈 Gradient Party")
-st.markdown("실시간 그라디언트 컬러 + 클릭하면 애니메이션/사운드까지! 아무것도 안해도 멋진 뽕맛. ")
+st.markdown("재미가있다.")
 
 html_code = """
 <html>
