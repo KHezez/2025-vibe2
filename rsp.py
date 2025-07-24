@@ -1,15 +1,14 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.title("⚡ 반속 가위바위보: 진짜 페이스러시 리듬 (monday X fury)")
+st.title("⚡ 패링 가위바위보")
 
 st.markdown("""
-**[조작법]**  
 - 1 = ✌️ (가위), 2 = ✊ (바위), 3 = ✋ (보)  
-- **"가위! 바위! 보!"** 뜨는 동안 <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> 아무때나 눌러서 실시간 손 바꿀 수 있음!  
-- CPU는 **항상 주먹(✊)으로 대기하다가**, “보!”에서만 랜덤하게 결정.  
-- 이기면 cpu 손이 아래로 떨어지고, 새로운 cpu가 "오른쪽 바깥"에서 들어옴!  
-- 지거나 시간초과면 ❤️이 1개 깎임 (0되면 게임오버)
+- "가위! 바위! 보!" 나오는 동안 <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> 아무때나 눌러서 실시간 손 바꾸기  
+- 패배 시 **"바꿔!!!!!"**(0.4초, 파란 원) 때 다시 바꿀 수 있음  
+- 이때 바꿔서 역전하면 **패링** 사운드+하얀색 점멸+0.3초 멈춤  
+- 같은 손 또 눌러서 지면 그냥 패배
 """)
 
 html_code = """
@@ -17,6 +16,7 @@ html_code = """
   <head>
     <meta charset="utf-8" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/addons/p5.sound.min.js"></script>
     <style>
       html, body { margin:0; padding:0; overflow:hidden; background:#21232a; }
       #canvas-container { width: 100vw; height: 390px;}
@@ -35,53 +35,82 @@ html_code = """
     <div id="canvas-container"></div>
     <div class="centermsg" id="msg"></div>
     <div class="gameover" id="over"></div>
+    <audio id="parrySound" src="https://files.catbox.moe/wwyaov.mp3" preload="auto"></audio>
     <script>
       // --------- 게임 변수
       let playerHand = 1; // 1=가위 2=바위 3=보
-      let cpuHand = 2; // cpu 기본: 바위
+      let cpuHand = 2;
       let playerHearts = 3;
-      let gameState = "wait"; // wait, show, resolve, cpuDrop, cpuSlide, gameover
+      let gameState = "wait"; // wait, show, resolve, cpuDrop, cpuSlide, gameover, parry, flash
       let msg = "", handNames = ["", "✌️", "✊", "✋"];
       let cpuDropY = 0, cpuSlideX = 0;
       let timer = 0, phase = 0;
       let inputLock = false;
       let cpuAlive = true;
-      let nextCpuHand = 2; // 다음 cpu 손
-      let showCpuHand = 2; // 애니메이션용 "지금 화면에 보여줄 cpu 손"
+      let showCpuHand = 2;
       let cpuRandReady = false;
+      let flashTime = 0; // 화면 번쩍
+      let parryTimer = 0; // 패링창 0.4초
+      let origHand = 1; // 패배시 내 원래 손(연타 방지)
+      let parryState = 0; // 0: 패배시 대기, 1: 바꿨는지
+      let afterParry = 0; // 1: 패리성공, 2: 패리무승부, 3: 패리실패
 
-      // --------- 시작
+      // --------- 사운드
+      let parrySound;
+      function preload() {}
+
       function setup() {
         let c = createCanvas(window.innerWidth, 390);
         c.parent('canvas-container');
         frameRate(60);
         document.getElementById("msg").innerHTML = "시작하기: 아무 키(1/2/3) 입력!";
+        parrySound = document.getElementById("parrySound");
       }
 
       function draw() {
-        background(26,28,36);
+        // 화면 번쩍 효과
+        let doFlash = (flashTime>0);
+
+        if (doFlash) {
+          background(255,255,255, 210);
+          flashTime--;
+        } else {
+          background(26,28,36);
+        }
 
         // 하트(플레이어) - 왼쪽 위
         textSize(30);
         let heartStr = "";
         for(let i=0; i<playerHearts; i++) heartStr += "❤️";
-        fill(255); textAlign(LEFT, TOP);
+        fill(doFlash?32:255,doFlash?32:255,doFlash?32:255);
+        textAlign(LEFT, TOP);
         text(heartStr, 30, 14);
 
         // 플레이어 손(왼쪽)
         textSize(80); textAlign(CENTER, CENTER);
-        fill(250,250,255);
+        fill(doFlash?255:250,doFlash?240:250,doFlash?200:255);
         text(handNames[playerHand], 120, height/2+20);
+
+        // 패링 타이밍 원 (gameState=="parry"에서만)
+        if (gameState==="parry" && parryTimer>0) {
+          noFill();
+          stroke(64,180,250, 190);
+          strokeWeight(10);
+          let t = parryTimer/24.0;
+          ellipse(120, height/2+20, 160*t, 160*t);
+          strokeWeight(1);
+        }
 
         // cpu 손(오른쪽)
         let cpuY = height/2+20 + cpuDropY;
         let cpuX = width-120 - cpuSlideX;
-        fill(cpuAlive?255:180, cpuAlive?255:180, cpuAlive?255:220);
-        // showCpuHand: 현재 화면에 보여줄 손
+        fill(cpuAlive?(doFlash?64:255):(doFlash?180:180),
+              cpuAlive?(doFlash?64:255):(doFlash?180:180),
+              cpuAlive?(doFlash?60:220):(doFlash?160:220));
         text(handNames[showCpuHand], cpuX, cpuY);
 
         // 중앙 구분선
-        stroke(150,155,190,70);
+        stroke(doFlash?200:150,doFlash?210:155,doFlash?230:190,70);
         strokeWeight(2.1);
         line(width/2, 35, width/2, height-35);
 
@@ -96,8 +125,6 @@ html_code = """
           let t = millis()-timer;
           phase = int(t/300);
           cpuRandReady = false;
-
-          // showCpuHand: "보!"전까지는 바위, "보!"시점에만 cpuHand 결정
           if (phase<2) {
             msg = phase==0 ? "가위!" : "바위!";
             showCpuHand = 2; // 바위
@@ -115,19 +142,38 @@ html_code = """
             resolve();
           }
         } else if (gameState==="resolve") {
-          // 판정 애니
-          // cpu 패배시 손 아래로 떨어짐
-          if (!cpuAlive) {
+          // 판정! 패배면 패링 찬스
+          if (parryState==1) {
+            gameState="parry";
+            msg = "바꿔!!!!!";
+            parryTimer = 24; // 0.4초(60fps 기준)
+            parryState=2;
+          } else if (!cpuAlive) {
+            // cpu 패배시 손 아래로 떨어짐
             cpuDropY += 16;
             if (cpuDropY > 160) {
               cpuDropY = 0;
               gameState = "cpuSlide";
               cpuAlive = true;
-              // 다음 cpu는 오른쪽 바깥에서 등장
               cpuHand = 2; // 초기상태: 바위
               showCpuHand = 2;
               cpuSlideX = -width*0.6;
             }
+          }
+        } else if (gameState==="parry") {
+          // 패링 타이밍
+          if (parryTimer>0) {
+            parryTimer--;
+          } else {
+            // 0.4초내에 못 바꿈 or 또 패배면 그냥 패배
+            if (afterParry==0) {
+              loseLife();
+            }
+          }
+        } else if (gameState==="flash") {
+          // 패링 성공 연출(0.3초간 멈춤+번쩍)
+          if (flashTime<=0) {
+            startRound();
           }
         } else if (gameState==="cpuSlide") {
           // 새로운 cpu 등장, 오른쪽 바깥에서 슬라이드 인
@@ -148,7 +194,7 @@ html_code = """
 
       // --------- 키보드 입력
       function keyPressed() {
-        if (inputLock && gameState!=="show") return;
+        if (inputLock && gameState!=="show" && gameState!=="parry") return;
         if (gameState==="wait") {
           startRound();
           return false;
@@ -157,6 +203,39 @@ html_code = """
           if (key=="1"||key=="2"||key=="3") {
             playerHand = int(key); // 쿨타임 없이 즉시 손 바꿀 수 있음
             return false;
+          }
+        }
+        if (gameState==="parry" && parryTimer>0) {
+          if (key=="1"||key=="2"||key=="3") {
+            let newHand = int(key);
+            // 같은 손으로 또 지면 그냥 패배
+            if (newHand == origHand) {
+              afterParry = 0;
+              parryTimer=0;
+              return false;
+            }
+            playerHand = newHand;
+            let win = judge(playerHand, cpuHand); // 1:승, 0:무, -1:패
+            if (win==1) {
+              // 패링 성공!
+              msg="패링!";
+              flashTime = 18; // 0.3초
+              gameState = "flash";
+              parrySound.play();
+              afterParry=1;
+              setTimeout(()=>{cpuAlive=false;},300);
+            } else if (win==0) {
+              msg="비겼다!";
+              afterParry=2;
+              setTimeout(()=>{ startRound(); }, 680);
+              gameState = "wait";
+            } else {
+              // 또 패배
+              afterParry=0;
+              setTimeout(()=>{ loseLife(); }, 180);
+              parryTimer=0;
+            }
+            parryTimer=0;
           }
         }
       }
@@ -176,30 +255,38 @@ html_code = """
         cpuRandReady = false;
         document.getElementById("over").innerHTML = "";
         inputLock = false;
+        parryState = 0; afterParry=0; origHand=1;
       }
 
       function resolve() {
         // 판정!
+        origHand = playerHand;
         let win = judge(playerHand, cpuHand); // 1:승, 0:무, -1:패
         if (win==1) {
           msg = "승리!";
           cpuAlive=false;
           gameState="resolve";
         } else if (win==-1) {
-          msg = "패배!";
-          playerHearts--;
-          if (playerHearts<=0) {
-            gameState = "gameover";
-          } else {
-            setTimeout(()=>{ startRound(); }, 650);
-            gameState = "wait";
-          }
+          // 패배: "바꿔!!!!!" 찬스
+          parryState=1;
+          // 이후 draw()에서 gameState를 parry로 전환
         } else {
           msg = "무승부!";
           setTimeout(()=>{ startRound(); }, 650);
           gameState = "wait";
         }
         inputLock = true;
+      }
+
+      function loseLife() {
+        msg = "패배!";
+        playerHearts--;
+        if (playerHearts<=0) {
+          gameState = "gameover";
+        } else {
+          setTimeout(()=>{ startRound(); }, 650);
+          gameState = "wait";
+        }
       }
 
       function judge(player, cpu) {
