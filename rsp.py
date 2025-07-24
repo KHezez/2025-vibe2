@@ -1,178 +1,212 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.title("🔥 멋진 가위바위보")
-st.markdown("아래 손을 클릭해서 선택! 승리/패배에 따라 화려한 연출과 점수가 나타납니다.")
+st.title("⚡ 반속 가위바위보: '페이스러시' (by monday X fury)")
+
+st.markdown("""
+**[조작법]**  
+- 1 = ✌️ (가위), 2 = ✊ (바위), 3 = ✋ (보)  
+- 중앙에 "가위! 바위! 보!" 뜨는 동안 <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> 아무거나 누르세요  
+- CPU는 랜덤하게 내고,  
+- 이기면 cpu 손이 아래로 떨어지고,  
+- 새로운 cpu가 오른쪽에서 등장합니다  
+- 지거나 시간초과면 ❤️이 1개 깎임 (0되면 게임오버)
+""")
 
 html_code = """
 <html>
-<head>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.js"></script>
-<style>
-  html, body { margin:0; padding:0; background:#222;}
-  #canvas-container { width: 100vw; height: 430px;}
-  .score { position:absolute; top:16px; right:40px; color:#fff; font-size:1.3rem; font-family:monospace; text-shadow:0 2px 8px #000c;}
-  .msg { position:absolute; top:56px; left:0; right:0; text-align:center; color:#fff; font-size:1.2rem; opacity:0.92;}
-</style>
-</head>
-<body>
-<div id="canvas-container"></div>
-<div class="score" id="score"></div>
-<div class="msg" id="msg"></div>
-<script>
-let hands = ["✌️","✊","✋"];
-let handNames = ["가위", "바위", "보"];
-let playerPick = -1, cpuPick = -1, animT=0;
-let phase="pick";
-let score=0, streak=0, bestStreak=0;
-let resultMsg="";
-let particleArr=[];
-let colorWin=[255,220,90], colorLose=[250,70,70], colorDraw=[80,180,255];
-
-function setup() {
-  let c = createCanvas(window.innerWidth, 420);
-  c.parent('canvas-container');
-  frameRate(60);
-  drawUI();
-}
-
-function draw() {
-  background(30,36,40);
-  textAlign(CENTER,CENTER);
-  textSize(32);
-
-  // 메시지
-  document.getElementById("score").innerHTML =
-    "점수: " + score + (streak>1 ? "🔥" + streak : "") +
-    (bestStreak>2 ? " | 최고연승: "+bestStreak : "");
-  document.getElementById("msg").innerHTML = resultMsg;
-
-  // 결과 애니메이션
-  if (phase=="show") {
-    // VS 타이밍
-    let colorR, msgR;
-    if (animT < 20) {
-      fill(255);
-      textSize(32+8*Math.sin(animT/2));
-      text("VS", width/2, height/2);
-    }
-    // 손들 애니
-    if (animT < 35) {
-      // 손들 "슬라이드 인"
-      drawHand(playerPick, width/2-90+40*Math.cos(animT/8), height/2+25, 1, true);
-      drawHand(cpuPick, width/2+90-40*Math.cos(animT/8), height/2-25, 1, false);
-    } else {
-      // 고정 위치에서 결과 강조
-      let outcome = getOutcome(playerPick, cpuPick);
-      let glow = animT<55 ? min(1, (animT-34)/12) : 1;
-      let colorE = (outcome==1) ? colorWin : (outcome==-1? colorLose : colorDraw);
-      // 파티클
-      for(let i=0; i<particleArr.length; i++) {
-        let p = particleArr[i];
-        fill(p.c[0],p.c[1],p.c[2],p.a);
-        ellipse(p.x, p.y, p.r, p.r);
-        p.x += p.vx; p.y += p.vy; p.a -= 2.4;
-        if (p.a<2) { particleArr.splice(i,1); i--;}
+  <head>
+    <meta charset="utf-8" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.js"></script>
+    <style>
+      html, body { margin:0; padding:0; overflow:hidden; background:#21232a; }
+      #canvas-container { width: 100vw; height: 390px;}
+      .centermsg {
+        position:absolute; top:65px; left:0; right:0; text-align:center;
+        font-size:2.4rem; color:#fff; text-shadow:0 2px 12px #000d; font-family:sans-serif;
       }
-      drawHand(playerPick, width/2-90, height/2+25, 1+0.1*glow, true, colorE);
-      drawHand(cpuPick, width/2+90, height/2-25, 1+0.1*glow, false, colorE);
+      .gameover {
+        position:absolute; top:150px; left:0; right:0; text-align:center;
+        font-size:2.8rem; color:#ffd0d0; text-shadow:0 2px 12px #000d;
+        font-family:sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="canvas-container"></div>
+    <div class="centermsg" id="msg"></div>
+    <div class="gameover" id="over"></div>
+    <script>
+      // --------- 게임 변수
+      let playerHand = 1; // 1=가위 2=바위 3=보
+      let cpuHand = 1;
+      let playerHearts = 3;
+      let gameState = "wait"; // wait, show, input, resolve, cpuDrop, cpuSlide, gameover
+      let msg = "", handNames = ["", "✌️", "✊", "✋"];
+      let cpuDropY = 0, cpuSlideX = 0;
+      let timer = 0, phase = 0;
+      let inputLock = false, lastInput = 0;
+      let cpuQueue = [2,3,1,2,3]; // 뒤에 무한 대기
+      let cpuAlive = true;
 
-      // 결과 메시지/컬러플래시
-      if (animT==40) {
-        if (outcome==1) {
-          for(let k=0; k<19; k++) addParticle(width/2-90, height/2+25, colorWin);
-        } else if (outcome==-1) {
-          for(let k=0; k<15; k++) addParticle(width/2+90, height/2-25, colorLose);
+      // --------- 시작
+      function setup() {
+        let c = createCanvas(window.innerWidth, 390);
+        c.parent('canvas-container');
+        frameRate(60);
+        document.getElementById("msg").innerHTML = "시작하기: 아무 키(1/2/3) 입력!";
+      }
+
+      function draw() {
+        background(26,28,36);
+
+        // 하트(플레이어) - 왼쪽 위
+        textSize(30);
+        let heartStr = "";
+        for(let i=0; i<playerHearts; i++) heartStr += "❤️";
+        fill(255); textAlign(LEFT, TOP);
+        text(heartStr, 30, 14);
+
+        // 플레이어 손(왼쪽)
+        textSize(80); textAlign(CENTER, CENTER);
+        fill(250,250,255);
+        text(handNames[playerHand], 120, height/2+20);
+
+        // cpu 손(오른쪽)
+        let cpuY = height/2+20 + cpuDropY;
+        let cpuX = width-120 - cpuSlideX;
+        fill(cpuAlive?255:180, cpuAlive?255:180, cpuAlive?255:220);
+        text(handNames[cpuHand], cpuX, cpuY);
+
+        // 중앙 구분선
+        stroke(150,155,190,70);
+        strokeWeight(2.1);
+        line(width/2, 35, width/2, height-35);
+
+        // 입력/상태 메시지
+        document.getElementById("msg").innerHTML = msg;
+
+        // 상태머신
+        if (gameState==="wait") {
+          // 대기: 아무 키 누르면 시작
+        } else if (gameState==="show") {
+          // "가위! 바위! 보!" 애니메이션
+          phase = int((millis()-timer)/300);
+          if (phase==0) { msg="가위!"; }
+          else if (phase==1) { msg="바위!"; }
+          else if (phase==2) { msg="보!"; }
+          else {
+            gameState = "input"; msg="손을 내세요! (1/2/3)";
+            timer = millis();
+            inputLock = false;
+            lastInput = 0;
+          }
+        } else if (gameState==="input") {
+          // 입력 타이밍(0.9초)
+          if (!inputLock && millis()-timer>900) {
+            // 입력 못함 = 패배
+            inputLock = true;
+            resolve(-1);
+          }
+        } else if (gameState==="resolve") {
+          // 판정 애니
+          // cpu 패배시 손 아래로 떨어짐
+          if (!cpuAlive) {
+            cpuDropY += 16;
+            if (cpuDropY > 160) {
+              cpuDropY = 0;
+              gameState = "cpuSlide";
+              cpuAlive = true;
+              cpuHand = cpuQueue.shift();
+              cpuQueue.push([1,2,3][int(random(3))]);
+              cpuSlideX = width*0.6;
+            }
+          }
+        } else if (gameState==="cpuSlide") {
+          // 새로운 cpu 등장, 오른쪽에서 왼쪽으로 슬라이드
+          cpuSlideX -= 24;
+          if (cpuSlideX<=0) {
+            cpuSlideX = 0;
+            gameState = "show";
+            timer = millis();
+            phase = 0;
+            msg = "";
+          }
+        } else if (gameState==="gameover") {
+          // 게임오버: 메시지
+          document.getElementById("over").innerHTML = "GAME OVER<br>다시 시작하려면 새로고침!";
+          noLoop();
         }
       }
-      if (animT > 60) phase="pick";
-    }
-    animT++;
-    return;
-  }
 
-  // 선택창
-  for(let i=0; i<3; i++) {
-    let x=width/2-100+i*100, y=height*0.75;
-    drawHand(i, x, y, 1.28+(playerPick==i?0.15:0));
-    if (phase=="pick") {
-      if (dist(mouseX,mouseY,x,y)<42) {
-        cursor("pointer");
-        fill(255,255,255,30+sin(frameCount/5)*30);
-        ellipse(x,y,80,80);
+      // --------- 키보드 입력
+      function keyPressed() {
+        if (inputLock) return;
+        if (gameState==="wait") {
+          startRound();
+          return false;
+        }
+        if (gameState==="input") {
+          if (key=="1"||key=="2"||key=="3") {
+            inputLock = true;
+            lastInput = int(key);
+            resolve(lastInput);
+            return false;
+          }
+        }
       }
-    }
-  }
-  // CPU 선택(랜덤)
-  if (phase=="cpu_anim") {
-    drawHand(int(random(3)), width/2+90, height/2-25, 1, false);
-    if (animT<28) animT++;
-    else { cpuPick=int(random(3)); phase="show"; animT=0;}
-  }
-}
 
-function drawHand(idx, x, y, scale=1, player=true, colorE=null) {
-  push();
-  translate(x, y);
-  scale*=1.22;
-  textAlign(CENTER,CENTER);
-  textSize(60*scale);
-  let txtColor=color(220,240,255);
-  if (colorE) txtColor=color(colorE[0],colorE[1],colorE[2]);
-  fill(txtColor);
-  text(hands[idx],0,0);
-  pop();
-  // 아래에 손이름
-  push();
-  textAlign(CENTER);
-  textSize(17*scale);
-  fill(180,195,255,170);
-  text(handNames[idx],x,y+48*scale);
-  pop();
-}
+      function startRound() {
+        // 새 라운드 시작
+        msg="";
+        cpuAlive=true;
+        cpuDropY=0;
+        cpuSlideX=0;
+        cpuHand = [1,2,3][int(random(3))];
+        playerHand = 1;
+        gameState = "show";
+        timer = millis();
+        phase = 0;
+        document.getElementById("over").innerHTML = "";
+      }
 
-function mousePressed() {
-  if (phase!="pick") return;
-  // 손 클릭
-  for(let i=0; i<3; i++) {
-    let x=width/2-100+i*100, y=height*0.75;
-    if (dist(mouseX,mouseY,x,y)<50) {
-      playerPick=i;
-      phase="cpu_anim";
-      animT=0; cpuPick=-1;
-      setTimeout(()=>{
-        let out=getOutcome(playerPick, cpuPick);
-        if (out==1) {
-          resultMsg="🔥 이겼다! 멋짐!";
-          score+=111; streak+=1; bestStreak=max(bestStreak,streak);
-        } else if (out==-1) {
-          resultMsg="😵 패배… 역전각?";
-          score-=99; streak=0;
+      function resolve(input) {
+        // -1이면 시간초과/미입력
+        playerHand = input>0?input:1; // 입력없으면 기본 1(가위)
+        let win = judge(playerHand, cpuHand); // 1:승, 0:무, -1:패
+        if (win==1) {
+          msg = "승리!";
+          cpuAlive=false;
+          gameState="resolve";
+        } else if (win==-1||input==-1) {
+          msg = "패배!";
+          playerHearts--;
+          if (playerHearts<=0) {
+            gameState = "gameover";
+          } else {
+            setTimeout(()=>{ startRound(); }, 650);
+            gameState = "wait";
+          }
         } else {
-          resultMsg="😎 무승부, 자존심 싸움";
+          msg = "무승부!";
+          setTimeout(()=>{ startRound(); }, 650);
+          gameState = "wait";
         }
-      }, 880);
-      break;
-    }
-  }
-}
+        inputLock = true;
+      }
 
-function getOutcome(a, b) {
-  if (a==b) return 0; // 무
-  if ((a==0&&b==2)||(a==1&&b==0)||(a==2&&b==1)) return 1; // 승
-  return -1; // 패
-}
+      function judge(player, cpu) {
+        if (player==cpu) return 0; // 무승부
+        if ((player==1&&cpu==3)||(player==2&&cpu==1)||(player==3&&cpu==2)) return 1; // 승
+        return -1; // 패
+      }
 
-function addParticle(x,y,c) {
-  let a=210+random(-40,25), ang=random(TWO_PI);
-  let r=18+random(12);
-  particleArr.push({x:x,y:y,c:c.slice(),a:a,vx:cos(ang)*random(2,6),vy:sin(ang)*random(2,6),r:r});
-}
-
-window.onresize = function() { resizeCanvas(window.innerWidth, 420);}
-</script>
-</body>
+      window.onresize = function() {
+        resizeCanvas(window.innerWidth, 390);
+      }
+    </script>
+  </body>
 </html>
 """
 
-components.html(html_code, height=500, scrolling=False)
+components.html(html_code, height=420, scrolling=False)
