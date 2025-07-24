@@ -2,11 +2,11 @@ import streamlit as st
 import random
 import streamlit.components.v1 as components
 
-st.title("🎱 숫자맞추기: 트롤 봇 에디션 (공만 버전)")
+st.title("🎱 숫자맞추기: 트롤 봇 에디션 (공/잔상 없는 클린 버전)")
 
 st.markdown("""
 > 숫자 입력하고 <kbd>Enter</kbd> 또는 버튼 클릭!  
-> (아래 파란 공을 마우스로 던져보세요!)  
+> (파란 공을 마우스로 던져보세요!)  
 """, unsafe_allow_html=True)
 
 MSG_UP = [
@@ -41,7 +41,7 @@ if st.button("도전!") or (st.session_state.last != guess and "guess_input" in 
 if "bot_msg" in st.session_state:
     st.markdown(f"<span style='font-size:1.6rem;color:#4af;font-weight:700;'>{st.session_state.bot_msg}</span>", unsafe_allow_html=True)
 
-# --- 미니멀 드래그 공 (넓은 운동장, 작은 공, 트레일 없음) ---
+# --- 완전 클린 드래그 공 ---
 bot_code = """
 <html>
   <head>
@@ -59,13 +59,8 @@ bot_code = """
         x = width/2; y = height/2;
       }
       function draw() {
-        background(0,0,0,0); // 완전 투명(트레일 없음)
-        // 바닥 효과 (살짝 그라데이션)
-        noStroke();
-        for(let i=0;i<8;i++){
-          fill(35,100,200,7+i*3);
-          ellipse(width/2, height-22, width*1.1-i*32, 24+i*3);
-        }
+        // 배경을 항상 완전히 덮음 = 트레일 완전 차단
+        background(245, 251, 255, 255);
         // 물리
         if(!dragging) {
           x += vx; y += vy;
