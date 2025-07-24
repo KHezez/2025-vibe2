@@ -6,8 +6,8 @@ st.title("⚡ 패링 가위바위보")
 st.markdown("""
 - 1 = ✌️ (가위), 2 = ✊ (바위), 3 = ✋ (보)  
 - "가위! 바위! 보!" 나오는 동안 <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> 아무때나 눌러서 실시간 손 바꾸기  
-- 패배 시 **"바꿔!!!!!"**(0.4초, 파란 원) 때 다시 바꿀 수 있음  
-- 이때 바꿔서 역전하면 **패링** 사운드+하얀색 점멸+0.3초 멈춤  
+- 패배 시 한번 바꿀 기회가 주워짐
+- 이때 바꿔서 역전하면 개꿀  
 - 같은 손 또 눌러서 지면 그냥 패배
 """)
 
@@ -49,10 +49,11 @@ html_code = """
       let cpuAlive = true;
       let showCpuHand = 2;
       let cpuRandReady = false;
-      let flashTime = 0; // 화면 번쩍
-      let parryTimer = 0; // 패링창 0.4초
+      let flashTime = 0; // 화면 번쩍(프레임수)
+      let quakeTime = 0; // 지진 남은 프레임
       let origHand = 1; // 패배시 내 원래 손(연타 방지)
       let parryState = 0; // 0: 패배시 대기, 1: 바꿨는지
+      let parryTimer = 0; // 패링창 0.4초
       let afterParry = 0; // 1: 패리성공, 2: 패리무승부, 3: 패리실패
 
       // --------- 사운드
@@ -68,9 +69,23 @@ html_code = """
       }
 
       function draw() {
-        // 화면 번쩍 효과
+        // ---- 지진/플래시 효과 계산 ----
         let doFlash = (flashTime>0);
+        let doQuake = (quakeTime>0);
+        let qStrength = doQuake ? (quakeTime/30) : 0; // 0~1, (30프레임=0.5초)
+        let shakeX=0, shakeY=0;
 
+        if (doQuake) {
+          let maxShake = 22*qStrength; // 초반에 세게, 점점 줄어듦
+          shakeX = random(-maxShake, maxShake);
+          shakeY = random(-maxShake, maxShake);
+          quakeTime--;
+        }
+
+        push();
+        translate(shakeX, shakeY);
+
+        // ---- 화면 번쩍 (플래시)
         if (doFlash) {
           background(255,255,255, 210);
           flashTime--;
@@ -113,6 +128,8 @@ html_code = """
         stroke(doFlash?200:150,doFlash?210:155,doFlash?230:190,70);
         strokeWeight(2.1);
         line(width/2, 35, width/2, height-35);
+
+        pop();
 
         // 입력/상태 메시지
         document.getElementById("msg").innerHTML = msg;
@@ -171,8 +188,8 @@ html_code = """
             }
           }
         } else if (gameState==="flash") {
-          // 패링 성공 연출(0.3초간 멈춤+번쩍)
-          if (flashTime<=0) {
+          // 패링 성공 연출(0.5초간 멈춤+번쩍+지진)
+          if (flashTime<=0 && quakeTime<=0) {
             startRound();
           }
         } else if (gameState==="cpuSlide") {
@@ -220,10 +237,11 @@ html_code = """
               // 패링 성공!
               msg="패링!";
               flashTime = 18; // 0.3초
+              quakeTime = 30; // 0.5초(60fps기준)
               gameState = "flash";
               parrySound.play();
               afterParry=1;
-              setTimeout(()=>{cpuAlive=false;},300);
+              setTimeout(()=>{cpuAlive=false;},400);
             } else if (win==0) {
               msg="비겼다!";
               afterParry=2;
