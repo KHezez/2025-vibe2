@@ -1,7 +1,7 @@
 import streamlit as st
 import random
 
-st.title("🔢 숫자맞추기 게임 (이건 시간을 안썼다)")
+st.title("🔢 숫자맞추기 게임 (ㄹㅇ)")
 st.markdown("1~100 사이의 숫자를 맞춰보세요!<br>힌트: <span style='color:#4af'>UP</span> / <span style='color:#fa4'>DOWN</span> (입력하고 Enter)", unsafe_allow_html=True)
 
 # 세션 상태로 랜덤 숫자, 시도 횟수 유지
