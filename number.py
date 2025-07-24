@@ -6,7 +6,8 @@ st.title("🎱 숫자맞추기")
 
 st.markdown("""
 > 숫자 입력하고 <kbd>Enter</kbd> 또는 버튼 클릭!  
-> (파란 공을 마우스로 던질 수 있음)  
+> (파란 공을 마우스로 던질 수 있음.  
+> 3번 이상 '가짜정답' 입력 후 '때리기' ON+공 클릭+버튼으로 종이 뱉기!)  
 """, unsafe_allow_html=True)
 
 MSG_UP = [
@@ -23,16 +24,25 @@ MSG_WRONG = [
     "뭐지? 정답 아닌데?", "아직 멀었어! 또 해봐", "누가 정답이라 그랬음? 아님 ㅋㅋ", "어림없지~", "정답 아직임 ㅋ"
 ]
 
-# --- 상태 변수 ---
+# --- 상태 변수, 항상 선언해줘야 함! ---
 if "target" not in st.session_state:
     st.session_state.target = random.randint(1,100)
+if "last" not in st.session_state:
     st.session_state.last = None
+if "tried" not in st.session_state:
     st.session_state.tried = 0           # 전체 시도 횟수
+if "fake_count" not in st.session_state:
     st.session_state.fake_count = 0      # "가짜정답" 시도 누적
+if "smash_mode" not in st.session_state:
     st.session_state.smash_mode = False
+if "paper_shown" not in st.session_state:
     st.session_state.paper_shown = False
+if "win" not in st.session_state:
     st.session_state.win = False
+if "show_button" not in st.session_state:
     st.session_state.show_button = False
+if "bot_msg" not in st.session_state:
+    st.session_state.bot_msg = ""
 
 def get_fake_answer():
     return int(st.session_state.target)
@@ -49,6 +59,7 @@ def reset():
     st.session_state.paper_shown = False
     st.session_state.win = False
     st.session_state.show_button = False
+    st.session_state.bot_msg = ""
 
 # --- 입력창+버튼 ---
 if not st.session_state.win:
@@ -58,7 +69,7 @@ if not st.session_state.win:
     if pressed or (st.session_state.last != guess and "guess_input" in st.session_state):
         st.session_state.last = guess
         st.session_state.tried += 1
-        # 진짜 정답은 소수점까지 일치!
+        # 진짜 정답(소수점까지)!
         if st.session_state.paper_shown and abs(guess-get_real_answer()) < 0.00001:
             st.session_state.win = True
             st.session_state.bot_msg = f"🎉 진짜 정답 {get_real_answer()} 맞춤! (최후의 승리자!)"
@@ -81,6 +92,7 @@ if not st.session_state.win:
     # 숨겨진 버튼 (가짜정답 3회만 노출)
     if st.session_state.show_button:
         st.session_state.smash_mode = st.toggle("클릭해서 때리기 on/off", value=st.session_state.smash_mode, key="smash_onoff")
+
 else:
     if st.button("다시하기"):
         reset()
@@ -100,7 +112,7 @@ if "bot_msg" in st.session_state and not st.session_state.win:
         </div>
         """, unsafe_allow_html=True)
 
-# --- 드래그 공+트롤+때리기+종이 뱉기 (JS) ---
+# --- 공/종이 (JS, 실제로는 종이 뱉는 애니만, python 상태변화는 버튼) ---
 bot_code = f"""
 <html>
   <head>
@@ -116,7 +128,7 @@ bot_code = f"""
       let smash_mode = {"true" if st.session_state.smash_mode else "false"};
       let paper_shown = {"true" if st.session_state.paper_shown else "false"};
       let paperY = 9999, paperV = 0, showPaper = false, paperVal = "{get_real_answer()}";
-      let smashAnim = 0, smashCount = 0;
+      let smashAnim = 0;
       function setup() {{
         createCanvas(360,360);
         x = width/2; y = height/2;
@@ -134,8 +146,6 @@ bot_code = f"""
             // 종이 등장
             showPaper = true;
             paperY = y; paperV = -10;
-            // streamlit에 신호(종이 나옴) 보내기
-            window.parent.postMessage({{func:'show_paper'}},'*');
           }}
         }}
         // 물리
@@ -166,9 +176,8 @@ bot_code = f"""
         let d = dist(mouseX, mouseY, x, y);
         if(d<r){{
           if(smash_mode && !showPaper && !paper_shown){{
-            // smash 애니
+            // smash 애니만, python상태는 버튼에서 처리
             smashAnim = 26;
-            smashCount++;
           }} else {{
             dragging=true;
             offsetX = mouseX-x;
@@ -203,13 +212,6 @@ bot_code = f"""
         text(val, 0, 14);
         pop();
       }}
-      // --- 종이 나오면 streamlit에 메시지 전달 ---
-      window.addEventListener("message", function(e) {{
-        if(e.data && e.data.func=="show_paper") {{
-          // 파이썬에서 상태 반영하도록
-          fetch(window.location.href, {{method:'POST'}});
-        }}
-      }});
     </script>
   </body>
 </html>
@@ -217,27 +219,8 @@ bot_code = f"""
 
 components.html(bot_code, height=380)
 
-# 종이 뱉기 신호 받으면 파이썬에서 상태 반영
-if not st.session_state.paper_shown:
-    # JS에서 postMessage->streamlit 파이썬으로 동기화
-    from streamlit_javascript import st_javascript
-    js = """
-    window.addEventListener("message", function(e){
-      if(e.data && e.data.func=="show_paper"){
-        fetch("/?show_paper=1");
-      }
-    });
-    """
-    try:
-        st_javascript(js)
-    except Exception:
-        # st_javascript가 없거나 불필요하면 그냥 패스
-        pass
-    # 대체 버튼(혹시 안 되면)
-    if st.session_state.smash_mode and st.session_state.show_button:
-        if st.button("종이 뱉게 하기(버그대비)") and not st.session_state.paper_shown:
-            st.session_state.paper_shown = True
-
-# 실제로 종이 상태 파이썬 반영
-if "show_paper" in st.query_params or st.session_state.paper_shown:
-    st.session_state.paper_shown = True
+# 종이 뱉기 "진짜로" python상태 변환용 버튼 (공 클릭 애니 후 누르는 방식)
+if not st.session_state.paper_shown and st.session_state.smash_mode and st.session_state.show_button:
+    st.markdown("---")
+    if st.button("종이 뱉게 하기(공 눌렀으면 누르기)"):
+        st.session_state.paper_shown = True
