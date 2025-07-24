@@ -1,7 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.title("🛡️ 탄막 패링 미니게임 (by monday X fury, 강화판)")
+st.title("🛡️ 탄막 패링 미니게임 (by monday X fury, 버그패치판)")
 st.markdown("탄이 플레이어 근처에 오면 클릭으로 패링!<br>번쩍이는 폭발 이펙트, 자유 이동, 탄막 다양화.", unsafe_allow_html=True)
 
 html_code = """
@@ -26,8 +26,10 @@ html_code = """
       let parryFlash = 0, parryFreeze = 0;
       let gameStarted = false, gameOver = false;
       let parrySound;
+      let startScreen = true;
+
       function preload() {
-        parrySound = loadSound("https://files.catbox.moe/wwyaov.mp3"); // 패링/폭발 사운드
+        parrySound = loadSound("https://files.catbox.moe/wwyaov.mp3");
       }
       function setup() {
         let c = createCanvas(window.innerWidth, 470);
@@ -35,14 +37,13 @@ html_code = """
         frameRate(60);
         px = width/2; py = height*0.8;
         document.getElementById("score").innerHTML = "";
+        startScreen = true;
       }
 
-      // --- 탄막 다양화 (좌/우/중앙 랜덤, 각도풀분포) ---
+      // --- 탄막 다양화 ---
       function spawnBullet() {
-        // 발사 위치: 화면 위 아무 곳
         let x = random(width*0.08, width*0.92);
         let y = -20;
-        // 발사 각도: 플레이어 기준, ±45도 + 조금 더 분산
         let angle = atan2(py-y, px-x) + random(-PI/6, PI/6);
         let speed = random(2.6, 4.0);
         bullets.push({
@@ -55,6 +56,16 @@ html_code = """
 
       let lastBullet = 0;
       function draw() {
+        if (startScreen) {
+          background(30,36,40);
+          fill(255);
+          textAlign(CENTER,CENTER);
+          textSize(34);
+          text("클릭해서 시작!", width/2, height/2-20);
+          textSize(18);
+          text("탄이 플레이어에 닿기 직전 클릭으로 패링!\n폭발 효과/사운드가 뜸", width/2, height/2+18);
+          return;
+        }
         if (!gameStarted) {
           background(30,36,40);
           fill(255);
@@ -62,7 +73,7 @@ html_code = """
           textSize(34);
           text("클릭해서 시작!", width/2, height/2-20);
           textSize(18);
-          text("탄이 플레이어에 닿기 직전 클릭으로 패링! 폭발 효과/사운드가 뜸", width/2, height/2+18);
+          text("탄이 플레이어에 닿기 직전 클릭으로 패링!\n폭발 효과/사운드가 뜸", width/2, height/2+18);
           return;
         }
         if (gameOver) {
@@ -75,14 +86,12 @@ html_code = """
           text("스코어: "+score, width/2, height/2+24);
           return;
         }
-
-        // *** 극딜 플래시: 순간 하얗게/다음 프레임에 바로 fade ***
+        // 극딜 플래시
         if (parryFlash > 0) {
           if (parryFlash === 15) {
-            // "순간 번쩍" 화면 전체 pure white
             background(255,255,255);
           } else {
-            background(255,255,220, parryFlash*10); // fade out
+            background(255,255,220, parryFlash*10);
           }
           parryFlash--;
         } else {
@@ -90,7 +99,7 @@ html_code = """
         }
         if (parryFreeze>0) {
           parryFreeze--;
-          return; // 일시정지
+          return;
         }
 
         // 플레이어
@@ -132,16 +141,18 @@ html_code = """
       }
 
       function mousePressed() {
-        if (!gameStarted) {
+        if (startScreen || !gameStarted) {
           gameStarted = true;
           gameOver = false;
           px = width/2; py = height*0.8; r=22;
           bullets = []; score=0; streak=0;
           lastBullet = frameCount; parryFlash=0; parryFreeze=0;
+          startScreen = false;
           return;
         }
         if (gameOver) {
           gameStarted=false;
+          startScreen=true;
           return;
         }
         // 가장 가까운 탄 판정
@@ -150,10 +161,10 @@ html_code = """
           let b = bullets[i];
           if (!b.alive || b.parried) continue;
           let d = dist(b.x,b.y,px,py);
-          if (d < r+11 && d > r-14) { // 패링 타이밍(±13px)
+          if (d < r+11 && d > r-14) {
             b.parried = true; hit=true;
             score += 100; streak += 1;
-            parryFlash = 15; // 15프레임: 1프레임 pure white
+            parryFlash = 15;
             parryFreeze = 18;
             if (parrySound.isLoaded()) parrySound.play();
             break;
@@ -165,15 +176,15 @@ html_code = """
         }
       }
 
-      // 이제 마우스 위/아래도 전부 자유 이동!
+      // 마우스 이동: 반드시 게임 중에만 적용
       function mouseMoved() {
-        if (gameStarted && !gameOver) {
+        if (gameStarted && !gameOver && !startScreen) {
           px = constrain(mouseX, r, width-r);
           py = constrain(mouseY, r, height-r);
         }
       }
       function touchMoved() {
-        if (gameStarted && !gameOver) {
+        if (gameStarted && !gameOver && !startScreen) {
           px = constrain(mouseX, r, width-r);
           py = constrain(mouseY, r, height-r);
         }
