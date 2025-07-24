@@ -1,8 +1,8 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.title("🛡️ 탄막 패링 미니게임 (by monday X fury, 버그패치판)")
-st.markdown("탄이 플레이어 근처에 오면 클릭으로 패링!<br>번쩍이는 폭발 이펙트, 자유 이동, 탄막 다양화.", unsafe_allow_html=True)
+st.title("🛡️ 탄막 패링 미니게임 (섬광 패링/XY컨트롤/방향수정 by monday X fury)")
+st.markdown("탄이 다가올 때 **정확히 클릭**해서 패링!<br>패링 순간 밝아지며 멈추는 연출, 총알은 모든 방향에서 쏟아짐!", unsafe_allow_html=True)
 
 html_code = """
 <html>
@@ -21,13 +21,10 @@ html_code = """
     <script>
       let px, py, r=22;
       let bullets = [];
-      let parryWindow = 22;
       let score = 0, streak = 0;
       let parryFlash = 0, parryFreeze = 0;
       let gameStarted = false, gameOver = false;
       let parrySound;
-      let startScreen = true;
-
       function preload() {
         parrySound = loadSound("https://files.catbox.moe/wwyaov.mp3");
       }
@@ -37,35 +34,35 @@ html_code = """
         frameRate(60);
         px = width/2; py = height*0.8;
         document.getElementById("score").innerHTML = "";
-        startScreen = true;
       }
 
-      // --- 탄막 다양화 ---
+      // ----- BULLET GENERATION -----
       function spawnBullet() {
-        let x = random(width*0.08, width*0.92);
-        let y = -20;
-        let angle = atan2(py-y, px-x) + random(-PI/6, PI/6);
-        let speed = random(2.6, 4.0);
-        bullets.push({
-          x: x, y: y,
-          vx: cos(angle)*speed,
-          vy: sin(angle)*speed,
-          alive: true, parried: false
-        });
+        // 탄막이 화면 전체(상단)에서 다양한 각도로 내려오게끔
+        let edge = random();
+        let x, y, angle, speed;
+        speed = random(2.8, 3.7);
+        // 상단(50%) / 좌측(25%) / 우측(25%) 스폰
+        if (edge < 0.5) {
+          // 상단 출현
+          x = random(40, width-40);
+          y = -10;
+          angle = random(PI*0.7, PI*1.3); // 대략 아래쪽(±40도)
+        } else if (edge < 0.75) {
+          // 왼쪽 출현
+          x = -10; y = random(60, height*0.8);
+          angle = random(-PI*0.1, PI*0.5); // 오른쪽+약간 아래
+        } else {
+          // 오른쪽 출현
+          x = width+10; y = random(60, height*0.8);
+          angle = random(PI*0.5, PI*1.1); // 왼쪽+약간 아래
+        }
+        bullets.push({x:x, y:y, vx:cos(angle)*speed, vy:sin(angle)*speed, alive:true, parried:false});
       }
 
       let lastBullet = 0;
       function draw() {
-        if (startScreen) {
-          background(30,36,40);
-          fill(255);
-          textAlign(CENTER,CENTER);
-          textSize(34);
-          text("클릭해서 시작!", width/2, height/2-20);
-          textSize(18);
-          text("탄이 플레이어에 닿기 직전 클릭으로 패링!\n폭발 효과/사운드가 뜸", width/2, height/2+18);
-          return;
-        }
+        // --- START 화면
         if (!gameStarted) {
           background(30,36,40);
           fill(255);
@@ -73,7 +70,7 @@ html_code = """
           textSize(34);
           text("클릭해서 시작!", width/2, height/2-20);
           textSize(18);
-          text("탄이 플레이어에 닿기 직전 클릭으로 패링!\n폭발 효과/사운드가 뜸", width/2, height/2+18);
+          text("탄이 플레이어에 닿기 직전 클릭으로 패링!\n패링시 섬광+멈춤+사운드", width/2, height/2+24);
           return;
         }
         if (gameOver) {
@@ -86,36 +83,37 @@ html_code = """
           text("스코어: "+score, width/2, height/2+24);
           return;
         }
-        // 극딜 플래시
-        if (parryFlash > 0) {
-          if (parryFlash === 15) {
-            background(255,255,255);
-          } else {
-            background(255,255,220, parryFlash*10);
-          }
-          parryFlash--;
+
+        // 패링 성공시 밝아지는 섬광 이펙트+멈춤
+        if (parryFlash>0) {
+          // 화면 전체 밝기 올리기 (섬광 연출, 다 덮진 않음)
+          background(140+parryFlash*0.8, 180+parryFlash*1.1, 220+parryFlash*0.8);
+          parryFlash -= 17; // 0.2초만(빠르게 fade out)
         } else {
           background(34,36,45);
         }
         if (parryFreeze>0) {
           parryFreeze--;
+          // freeze중에도 플레이어, 총알 멈춤
+          // 단, 섬광은 draw됨
+          // 스코어 표시
+          document.getElementById("score").innerHTML = "점수: "+score+(streak>4?"  🔥":"");
           return;
         }
 
         // 플레이어
-        fill(190,210,255);
+        fill(190,210,255, 230);
         ellipse(px, py, r*2.1, r*2.1);
-        fill(60,90,190,160);
+        fill(60,90,190,170);
         ellipse(px, py, r*1.08, r*1.08);
 
-        // 탄막 (0.5초에 1발, 점점 짧아짐)
-        let bulletDelay = 30 - Math.min(score//300, 16);
-        if (frameCount - lastBullet > bulletDelay) {
+        // 총알 생성
+        if (frameCount - lastBullet > 27) { // 0.45초에 1발
           spawnBullet();
           lastBullet = frameCount;
         }
 
-        // 탄 이동/그리기
+        // 총알 이동/그리기
         for (let i=bullets.length-1; i>=0; i--) {
           let b = bullets[i];
           if (!b.alive) continue;
@@ -123,7 +121,7 @@ html_code = """
             fill(250,90,50);
             ellipse(b.x, b.y, 20,20);
           } else {
-            fill(70,240,180,160);
+            fill(70,240,180,150);
             ellipse(b.x, b.y, 25,25);
           }
           b.x += (b.vx||0);
@@ -135,37 +133,37 @@ html_code = """
             gameOver = true;
             document.getElementById("score").innerHTML = "";
           }
+          // 화면 밖으로 나가면 삭제
           if (b.y > height+30 || b.x < -50 || b.x > width+50) bullets.splice(i,1);
         }
         document.getElementById("score").innerHTML = "점수: "+score+(streak>4?"  🔥":"");
       }
 
       function mousePressed() {
-        if (startScreen || !gameStarted) {
+        if (!gameStarted) {
           gameStarted = true;
           gameOver = false;
           px = width/2; py = height*0.8; r=22;
           bullets = []; score=0; streak=0;
           lastBullet = frameCount; parryFlash=0; parryFreeze=0;
-          startScreen = false;
           return;
         }
         if (gameOver) {
           gameStarted=false;
-          startScreen=true;
           return;
         }
-        // 가장 가까운 탄 판정
+        // 가장 가까운 탄과 거리 비교 → 패링 판정
         let hit = false;
         for (let i=0; i<bullets.length; i++) {
           let b = bullets[i];
           if (!b.alive || b.parried) continue;
           let d = dist(b.x,b.y,px,py);
-          if (d < r+11 && d > r-14) {
+          if (d < r+11 && d > r-11) { // 패링 타이밍(±11px)
+            // 패링 성공!
             b.parried = true; hit=true;
             score += 100; streak += 1;
-            parryFlash = 15;
-            parryFreeze = 18;
+            parryFlash = 64; // 0.2초(강한 섬광)
+            parryFreeze = 12; // 0.2초 멈춤
             if (parrySound.isLoaded()) parrySound.play();
             break;
           }
@@ -176,20 +174,13 @@ html_code = """
         }
       }
 
-      // 마우스 이동: 반드시 게임 중에만 적용
       function mouseMoved() {
-        if (gameStarted && !gameOver && !startScreen) {
+        // 마우스 위치 따라 x/y 모두 이동
+        if (gameStarted && !gameOver) {
           px = constrain(mouseX, r, width-r);
-          py = constrain(mouseY, r, height-r);
+          py = constrain(mouseY, height*0.5, height*0.93);
         }
       }
-      function touchMoved() {
-        if (gameStarted && !gameOver && !startScreen) {
-          px = constrain(mouseX, r, width-r);
-          py = constrain(mouseY, r, height-r);
-        }
-      }
-
       window.onresize = function() {
         resizeCanvas(window.innerWidth, 470);
       }
